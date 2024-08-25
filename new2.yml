@@ -1,0 +1,76 @@
+---
+- name: Add multiple users to FreeIPA and assign them to multiple groups
+  hosts: localhost
+  gather_facts: no
+  vars:
+    users:
+      - name: "user1"
+        givenname: "User"
+        sn: "One"
+        email: "user1@example.com"
+        groups:
+          - "openstack"
+          - "openstack-admins"
+      - name: "user2"
+        givenname: "User"
+        sn: "Two"
+        email: "user2@example.com"
+        groups:
+          - "openstack-admins"
+          - "openstack-users"
+          - "openshift_admins"
+    ipa_server: "freeipa.redhat.local"
+    ipa_admin_user: "admin"
+    ipa_admin_password: "password"
+
+  tasks:
+    - name: Add users to FreeIPA
+      community.general.ipa_user:
+        ipa_host: "{{ ipa_server }}"
+        ipa_user: "{{ ipa_admin_user }}"
+        ipa_pass: "{{ ipa_admin_password }}"
+        name: "{{ item.name }}"
+        givenname: "{{ item.givenname }}"
+        sn: "{{ item.sn }}"
+        mail: "{{ item.email }}"
+        validate_certs: no
+        state: present
+      loop: "{{ users }}"
+      register: user_results
+
+    - name: Debug user results
+      debug:
+        var: user_results
+
+    - name: Debug users variable
+      debug:
+        var: users
+
+    - name: Compute user and group combinations
+      set_fact:
+        user_group_combinations: >
+          {%- set combinations = [] -%}
+          {%- for user in users -%}
+            {%- for group in user.groups -%}
+              {%- set _ = combinations.append({'user': user.name, 'group': group}) -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ combinations }}
+
+    - name: Display user and group combinations
+      debug:
+        var: user_group_combinations
+
+    - name: Ensure each user is part of their specified groups
+      community.general.ipa_group:
+        ipa_host: "{{ ipa_server }}"
+        ipa_user: "{{ ipa_admin_user }}"
+        ipa_pass: "{{ ipa_admin_password }}"
+        name: "{{ item.group }}"
+        user: "{{ item.user }}"
+        append: yes
+        validate_certs: no
+        state: present
+      loop: "{{ user_group_combinations }}"
+      loop_control:
+        label: "{{ item.user }} -> {{ item.group }}"
